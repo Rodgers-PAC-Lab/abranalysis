@@ -157,7 +157,8 @@ def main():
     # Streamlit UI
     st.title("ABRA")
     tab1, tab2 = st.sidebar.tabs(["Data", "Plotting and Analysis"])
-    
+
+    # Adds UI for uploading file
     uploaded_files = tab1.file_uploader("**Upload files to analyze:**", type=["csv", "arf", "asc", "tsv"], accept_multiple_files=True)
     tab1.markdown("<small><i>Note: All uploaded files are processed in memory only and are not retained by the application.</i></small>", unsafe_allow_html=True)
     # Inputs:

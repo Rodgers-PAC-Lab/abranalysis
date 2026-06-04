@@ -255,6 +255,10 @@ def display_peaks_table(selected_dfs, selected_files, freqs, db_levels, return_t
                 if st.session_state.return_units == 'Nanovolts':
                     y_values *= 1000
 
+                # Once again, for some reason y_values keeps being a pandas series instead of a numpy arraqy
+                if type(y_values) != np.ndarray:
+                    y_values = np.array(y_values)
+
                 metrics_data['File Name'].append(file_name.split("/")[-1])
                 metrics_data['Frequency (Hz)'].append(freq)
                 if db_column == 'Level(dB)':
@@ -486,6 +490,10 @@ def calculate_and_plot_wave(df, freq, db, peak_finding_model=default_peak_findin
         st.session_state.calculated_waves = {}
 
     threshold=None
+
+    # I THINK this block of code checks to see if there's waves already calculated
+    # and then if there's not it goes on to calculate... something? Threshold first somehow, then other things?
+
     try:
         threshold = np.abs(calculate_hearing_threshold(df, freq))
     except Exception as e:
@@ -511,7 +519,9 @@ def calculate_and_plot_wave(df, freq, db, peak_finding_model=default_peak_findin
         else: 
             return cached_result
 
-    result = calculate_and_plot_wave_exact(df, freq, db, peak_finding_model, return_peaks=calc_peaks)
+    # If the result isn't already cached, get the result?
+    result = calculate_and_plot_wave_exact(df, freq, db,
+        peak_finding_model, return_peaks=calc_peaks)
 
     st.session_state.calculated_waves[cache_key] = result
 
@@ -526,8 +536,9 @@ def calculate_and_plot_wave(df, freq, db, peak_finding_model=default_peak_findin
 
     return result
 
-def calculate_and_plot_wave_exact(df, freq, db, peak_finding_model=default_peak_finding_model(), return_peaks=True,
-                                  ):
+def calculate_and_plot_wave_exact(df, freq, db,
+        peak_finding_model=default_peak_finding_model(),
+        return_peaks=True):
     atten = st.session_state.get('atten', False)
 
     db_column = 'Level(dB)' if not atten else 'PostAtten(dB)'
@@ -548,7 +559,10 @@ def calculate_and_plot_wave_exact(df, freq, db, peak_finding_model=default_peak_
         if not return_peaks:
             return orig_x, orig_y, None, None
         # y_values for peak finding:
+        # This readjusts something if the recordings are longer than 10 ms
         tenms = int((10/st.session_state.time_scale)*len(orig_y)) if st.session_state.time_scale > 10 else len(orig_y)
+
+        # Some kind of interpolation if it's less than 244 samples
         y_values_fpf = interpolate_and_smooth(orig_y[:tenms], 244)
 
         flattened_data = y_values_fpf.values.flatten().reshape(-1, 1)

@@ -147,7 +147,10 @@ def plot_waves_single_frequency(selected_dfs, selected_files, freq, plot_time_wa
                 name = f'{int(cal_dB)} dB' 
                 if cal_dB == threshold:
                     name = 'Threshold: ' + name
-                
+
+                if type(y_values) != np.ndarray:
+                    y_values = np.array(y_values)
+
                 fig.add_trace(go.Scatter(x=x_values, y=y_values, mode='lines', name=name, line=dict(color=color, width=width)))
 
                 if show_peaks and highest_peaks is not None:
@@ -190,14 +193,19 @@ def plot_waves_single_tuple(selected_dfs, selected_files, freq, db, show_peaks=T
     fig = go.Figure()
     file_list = []
     for idx, file_df in enumerate(selected_dfs):
+        # This is where it screws up, in the calculate and plot wave function
         x_values, y_values, highest_peaks, relevant_troughs = calculate_and_plot_wave(file_df, freq, db)
         if y_values is not None:
             y_values = apply_units(y_values)
+            if type(y_values) != np.ndarray:
+                y_values = np.array(y_values)
             file_list.append(selected_files[idx].split("/")[-1])
             fig.add_trace(go.Scatter(x=x_values, y=y_values, mode='lines', name=f'{selected_files[idx].split("/")[-1]}'))#, showlegend=False))
             if show_peaks and highest_peaks is not None:
                 # Mark the highest peaks with red markers
-                fig.add_trace(go.Scatter(x=x_values[highest_peaks], y=y_values[highest_peaks], mode='markers', marker=dict(color='red'), name='Peaks'))#, showlegend=False))
+                fig.add_trace(go.Scatter(
+                    x=x_values[highest_peaks], y=np.array(y_values)[highest_peaks],
+                    mode='markers', marker=dict(color='red'), name='Peaks'))#, showlegend=False))
 
                 # Mark the relevant troughs with blue markers
                 fig.add_trace(go.Scatter(x=x_values[relevant_troughs], y=y_values[relevant_troughs], mode='markers', marker=dict(color='blue'), name='Troughs'))#, showlegend=False))
