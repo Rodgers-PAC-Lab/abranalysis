@@ -481,7 +481,7 @@ def apply_manual_peak_edits(file_name, freq, db, x_values, y_values, highest_pea
     
     return valid_peaks, valid_troughs
 
-def calculate_and_plot_wave(df, freq, db, peak_finding_model=default_peak_finding_model(), return_peaks=True):
+def calculate_and_plot_wave(df, freq, db, peak_finding_model=default_peak_finding_model(filepath='utils/models/waveI_cnn.pth'), return_peaks=True):
     file_name = getattr(df, 'name', 'unknown_file')
 
     cache_key = f"wave_{file_name}_{freq}_{db}_{return_peaks}" 
@@ -515,6 +515,8 @@ def calculate_and_plot_wave(df, freq, db, peak_finding_model=default_peak_findin
                     modified_peaks, modified_troughs = apply_manual_peak_edits(
                         file_name.split('/')[-1], freq, db_spl, x_values, y_values, highest_peaks, relevant_troughs
                     )
+                    if type(y_values) != np.ndarray:
+                        y_values = np.array(y_values)
                     return x_values, y_values, modified_peaks, modified_troughs
         else: 
             return cached_result
@@ -532,12 +534,14 @@ def calculate_and_plot_wave(df, freq, db, peak_finding_model=default_peak_findin
             modified_peaks, modified_troughs = apply_manual_peak_edits(
                 file_name.split('/')[-1], freq, db_spl, x_values, y_values, highest_peaks, relevant_troughs
             )
+            if type(y_values) != np.ndarray:
+                y_values = np.array(y_values)
             return x_values, y_values, modified_peaks, modified_troughs
 
     return result
 
 def calculate_and_plot_wave_exact(df, freq, db,
-        peak_finding_model=default_peak_finding_model(),
+        peak_finding_model=default_peak_finding_model(filepath='utils/models/waveI_cnn.pth'),
         return_peaks=True):
     atten = st.session_state.get('atten', False)
 
@@ -580,7 +584,8 @@ def calculate_and_plot_wave_exact(df, freq, db,
             # check for +/- interpolation errors:
             highest_peaks = np.array([np.argmax(orig_y[peak-1:peak+2]) + peak - 1 for peak in highest_peaks])
             relevant_troughs = np.array([np.argmin(orig_y[trough-1:trough+2]) + trough - 1 for trough in relevant_troughs])
-
+        if type(orig_y)!= np.ndarray:
+            orig_y = np.array(orig_y)
         return orig_x, orig_y, highest_peaks, relevant_troughs
     else:
         return None, None, None, None

@@ -1,3 +1,5 @@
+import os.path
+from pathlib import Path
 import torch
 import torch.nn as nn
 from tensorflow.keras.models import load_model
@@ -28,7 +30,7 @@ class CNN(nn.Module):
         x = self.fc2(x)
         return x
 
-def default_peak_finding_model():
+def default_peak_finding_model(filepath):
     filter1 = 128
     filter2 = 32
     dropout1 = 0.5
@@ -36,7 +38,8 @@ def default_peak_finding_model():
     dropout_fc = 0.1
     # Load the pre-trained model
     peak_finding_model = CNN(filter1, filter2, dropout1, dropout2, dropout_fc)
-    model_loader = torch.load('utils/models/waveI_cnn.pth')
+    # model_loader = torch.load('utils/models/waveI_cnn.pth')
+    model_loader = torch.load(filepath)
     peak_finding_model.load_state_dict(model_loader)
     peak_finding_model.eval()
     return peak_finding_model
