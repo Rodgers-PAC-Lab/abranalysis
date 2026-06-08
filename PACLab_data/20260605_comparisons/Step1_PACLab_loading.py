@@ -1,0 +1,582 @@
+## Identify and categorize clicks, and slice neural and audio data around them
+# This script takes a while - 12 minutes or so
+# Everything that involves loading the raw data for all sesssions should be
+# done in this script, to avoid having to load multiple times.
+#
+# Workflow:
+# * Loads data and checks for glitches
+# * Calculates PSD
+# * Extracts heartbeats
+# * Extract and categorizes clicks
+# * Slices neural and audio data around clicks
+# * Concat everything across sessions and stores
+#
+# This script is the one that assigns amplitude labels.
+#
+# Writes out the following in the output directory
+#   big_triggered_ad - audio data triggered on clicks
+#   big_triggered_neural - neural data triggered on clicks
+#   big_click_params - click metadata
+#   big_Pxx - PSDs
+#   big_heartbeat_info - time of each beat
+#   big_heartbeat_waveform - mean EKG waveform of each recording
+
+import os
+import json
+import datetime
+import scipy.signal
+import numpy as np
+import pandas
+import ABR2025
+import paclab  # copy psd function in here if needed
+from paclab import abr_misc
+import tqdm
+
+## Paths
+# Load the required file filepaths.json (see README)
+with open('filepaths.json') as fi:
+    paths = json.load(fi)
+
+# Parse into paths to raw data and output directory
+raw_data_directory = paths['raw_data_directory']
+output_directory = paths['output_directory']
+metadata_directory = paths['metadata_directory']
+
+## Load mouse metadata
+
+# The mouse and experiment metadata should be int hr output folder
+
+mouse_metadata = pandas.read_csv(os.path.join(metadata_directory, 'mouse_metadata.csv'))
+
+# The experiments in the dataset
+experiment_metadata = pandas.read_csv(os.path.join(metadata_directory, 'experiment_metadata.csv'))
+
+# When exporting to CSV first, datetime-like columns are str
+# Turn the dates into actual datetime dates
+experiment_metadata['date'] = experiment_metadata['date'].apply(
+    lambda x: datetime.datetime.strptime(x, '%Y-%m-%d').date())
+mouse_metadata['DOB'] = mouse_metadata['DOB'].apply(
+    lambda x: datetime.datetime.strptime(x, '%Y-%m-%d').date())
+
+# Coerce: special case this one because it can be null
+mouse_metadata['HL_date'] = mouse_metadata['HL_date'].apply(
+    lambda x: None if pandas.isnull(x) else
+    datetime.datetime.strptime(x, '%Y-%m-%d').date())
+
+# Error check for duplicates
+assert not mouse_metadata.duplicated().any()
+assert not experiment_metadata.duplicated().any()
+
+# Calculate age on the day of the experiment
+experiment_metadata = experiment_metadata.join(
+    mouse_metadata.set_index('mouse')['DOB'], on='mouse')
+experiment_metadata['age'] = (
+        experiment_metadata['date'] - experiment_metadata['DOB']
+        ).apply(lambda x: x.days)
+experiment_metadata = experiment_metadata.drop('DOB', axis=1)
+
+# Calculate whether each experiment was before or after hearing loss
+experiment_metadata = experiment_metadata.join(
+    mouse_metadata.set_index('mouse')['HL_date'], on='mouse')
+experiment_metadata['after_HL'] = (
+        experiment_metadata['date'] > experiment_metadata['HL_date']
+)
+
+## Set up the click categories
+# In this dataset, all clicks should have this amplitude
+expected_amplitude = [
+    0.01,  0.0063,  0.004, 0.0025, 0.0016, 0.001, 0.00063,
+    0.0004, 0.00025, 0.00016, 0.0001, 6.3e-05, 4e-05,
+    ]
+
+
+## Number the sessions within for each group of mouse * after_HL
+# This will define n_experiment as {0, 1, ...} before hearing loss and
+# (if applicable) {0, 1, ...} after hearing loss
+
+# Sort by date
+experiment_metadata = experiment_metadata.sort_values('date')
+
+# Group
+gobj = experiment_metadata.groupby(['mouse', 'after_HL'])
+
+# Number sessions within each group
+subdf_l = []
+for (mouse, after_HL), subdf in gobj:
+    subdf['n_experiment'] = range(len(subdf))
+
+    # Get days after HL.
+    # datetime.days breaks on nulls so first pick non-null
+    if subdf['HL_date'].iloc[0] != None:
+        # If there's more than one row in subdf you have to do apply.lambda()
+        if len(subdf) > 1:
+            subdf['days_after_HL'] = (subdf['date'] - subdf['HL_date']).apply(
+                lambda x: x.days)
+        # If it's only one row use .days
+        else:
+            subdf['days_after_HL'] = (subdf['date'] - subdf['HL_date']).days
+    # If HL_date is null, so is days_after_HL
+    else:
+        subdf['days_after_HL'] = None
+    # Store
+    subdf_l.append(subdf)
+
+# Concat
+experiment_metadata = pandas.concat(subdf_l).sort_index()
+
+## Load metadata from each recording
+# For every day, there is a _notes_v6.csv file in the GUI data directory, and
+# that csv file labels the mouse for every recording on that day
+# Here, we loop over the experiments (e.g., experimenter * mouse * day),
+# and get the metadata for each recording on that experiment
+# Load data from every date that is included
+recording_metadata_l = []
+
+for idx in tqdm.tqdm(experiment_metadata.index):
+    # Get the experimenter, date, and mouse
+    experimenter, experiment_date, mouse = experiment_metadata.loc[
+        idx, ['experimenter', 'date', 'mouse']]
+
+    # Form data_directory where both the notes csv and recording data are stored
+    folder_datestr = datetime.datetime.strftime(experiment_date, '%Y-%m-%d')
+    data_directory = os.path.join(
+        raw_data_directory, folder_datestr, experimenter)
+
+    # If this path doesn't exist it probably has a capitalization error.
+    if not os.path.exists(data_directory):
+        # Go one directory up and get which experimenter directories exist.
+        dirs = os.listdir(os.path.join(raw_data_directory, folder_datestr))
+
+        # Iterate through the directories to find one like 'experimenter' but
+        # with different capitalization
+        for d in dirs:
+            d_low = d.lower()
+            d_cap = d.capitalize()
+            if d.lower() == experimenter or d.capitalize() == experimenter:
+                experimenter = d
+
+                # Try forming the directory again
+                data_directory = os.path.join(raw_data_directory, folder_datestr, experimenter)
+
+    # Load metadata for the day (hardcoding v6)
+    this_date_metadata = abr_misc.get_metadata(
+        data_directory, experiment_date.strftime('%y%m%d'), 'v6')
+
+    # Check that we actually found data
+    assert len(this_date_metadata) > 0
+    assert mouse in this_date_metadata['mouse'].values
+
+    # Warn about mice that we are dropping
+    # TODO: make sure these are all 5xFAD+
+    drop_mice = this_date_metadata['mouse'].unique()
+    ignoring_mice = [mouse for mouse in drop_mice if mouse not in mouse_metadata['mouse'].values]
+    if len(ignoring_mice) > 0:
+        print(f'warning: ignoring mice {ignoring_mice}')
+
+    # Include only data from this mouse
+    this_date_metadata = this_date_metadata[
+        this_date_metadata['mouse'] == mouse]
+
+    # Insert date
+    this_date_metadata['date'] = experiment_date
+
+    # Drop datafile, which contains the full path, which can differ based
+    # on user and filesystem
+    this_date_metadata = this_date_metadata.drop('datafile', axis=1)
+
+
+    # Replace datafile with a relative path within raw_data_directory
+    def recording_name2short_datafile(recording_name):
+        """Turn bare recording name into a path within raw_data_directory.
+
+        Join folder_datestr and experimenter before recording_name
+        """
+        return os.path.join(folder_datestr, experimenter, recording_name)
+
+
+    this_date_metadata['short_datafile'] = this_date_metadata[
+        'recording_name'].apply(recording_name2short_datafile)
+
+    # Reindex
+    this_date_metadata = this_date_metadata.set_index(
+        ['date', 'mouse', 'recording'])
+
+    # Store
+    recording_metadata_l.append(this_date_metadata)
+
+# Concat
+# Indexed by date * mouse * recording, with 1 row per recording
+recording_metadata = pandas.concat(recording_metadata_l)
+
+## Include only some recordings
+# Default value for 'include' is True
+recording_metadata['include'] = recording_metadata['include'].fillna(True)
+
+# Drop those with 'include' == False
+recording_metadata = recording_metadata[recording_metadata['include'] == True]
+
+# Drop these with torn data
+# to_drop = [
+#     (datetime.date(2025, 3, 10), 'Ketchup_208', 9),
+#     (datetime.date(2025, 3, 10), 'Ketchup_209', 5),
+#     (datetime.date(2025, 2, 19), 'PowerRainbow2', 3),
+#     (datetime.date(2025, 2, 19), 'PowerRainbow2', 4),
+#     (datetime.date(2025, 2, 19), 'PowerRainbow2', 6),
+#     ]
+# recording_metadata = recording_metadata.drop(to_drop)
+
+
+## Error check that amplitude is always the same
+for actual_amplitude in recording_metadata['amplitude'].values:
+    assert actual_amplitude == expected_amplitude
+
+# Drop this column
+recording_metadata = recording_metadata.drop('amplitude', axis=1)
+
+## Sort
+mouse_metadata = mouse_metadata.sort_index().sort_index(axis=1)
+experiment_metadata = experiment_metadata.sort_index().sort_index(axis=1)
+recording_metadata = recording_metadata.sort_index().sort_index(axis=1)
+
+for i in experiment_metadata.index:
+    i_row = experiment_metadata.iloc[i]
+
+## Store
+mouse_metadata.to_pickle(
+    os.path.join(output_directory, 'mouse_metadata'))
+experiment_metadata.to_pickle(
+    os.path.join(output_directory, 'experiment_metadata'))
+recording_metadata.to_pickle(
+    os.path.join(output_directory, 'recording_metadata'))
+
+# Output will go here
+if not os.path.exists('figures'):
+    os.mkdir('figures')
+
+## Start loading recording data
+
+## Params
+abr_start_sample = 0
+abr_stop_sample = 160
+abr_highpass_freq = 300
+abr_lowpass_freq = 3000
+
+# ECG params
+heartbeat_highpass_freq = 20
+heartbeat_lowpass_freq = 500
+
+# Recording params
+sampling_rate = 16000
+neural_channel_numbers = [0, 2, 4]
+audio_channel_number = 7
+
+## Set up the click categories
+
+# Convert the autopilot amplitudes to voltages
+# This 1.34 is empirically determined to align autopilot with measured voltage
+log10_voltage = np.sort(np.log10(expected_amplitude) + 1.34)
+
+# SPL as measured with the ultrasonic microphone
+# Note: Subtract 20 dB here (average over 50 ms instead of 0.5 ms)
+amplitude_labels = np.linspace(45, 93, 13).astype(int) - 20
+
+# Convert the voltages to cuts
+amplitude_cuts = (log10_voltage[1:] + log10_voltage[:-1]) / 2
+
+# Add a first and last amplitude cut
+diff_cut = np.mean(np.diff(amplitude_cuts))
+amplitude_cuts = np.concatenate([
+    [amplitude_cuts[0] - diff_cut],
+    amplitude_cuts,
+    [amplitude_cuts[-1] + diff_cut],
+])
+
+## Load data from each recording
+click_params_l = []
+triggered_ad_l = []
+triggered_neural_l = []
+heartbeats_l = []
+heartbeats_waveform_l = []
+Pxx_df_l = []
+keys_l = []
+
+# Iterate over recordings
+for date, mouse, recording in tqdm.tqdm(recording_metadata.index):
+
+    # Get the recording info
+    this_recording = recording_metadata.loc[date].loc[mouse].loc[recording]
+
+    ## Load raw data in volts
+    # Get the filename
+    recording_folder = os.path.normpath(
+        os.path.join(raw_data_directory, this_recording['short_datafile']))
+
+    # Load the data
+    data = ABR2025.loading.load_recording(recording_folder)
+    data = data['data']
+
+    # Parse into neural and speaker data
+    speaker_signal_V = data[:, audio_channel_number]
+    neural_data_V = data[:, neural_channel_numbers]
+
+    ## Check for glitches
+    # The maximum voltage I ever see in real data is ~0.1 V, and that's only
+    # when there's a substantial DC offset. The demeaned absmax is like ~1 mV.
+    assert np.abs(neural_data_V).max() < 0.3
+
+    ## Label the neural data by channel name
+    # DataFrame labeled by channel number
+    neural_data_df = pandas.DataFrame(
+        neural_data_V,
+        columns=neural_channel_numbers)
+
+    # Rename the channels meaningfully
+    # This fixes the inconsistent channel order for Pineapple_197 on 2025-02-12
+    neural_data_df.columns.name = 'channel'
+    neural_data_df = neural_data_df.rename(columns={
+        0: this_recording.loc['ch0_config'],
+        2: this_recording.loc['ch2_config'],
+        4: this_recording.loc['ch4_config']
+    }, level='channel')
+
+    # Check no NN or other channels
+    assert neural_data_df.columns.isin(['LR', 'LV', 'RV']).all()
+    neural_data_df = neural_data_df.sort_index(axis=1)
+
+    ## Bandpass heartbeat
+    # Define heartbeat filter
+    nyquist_freq = sampling_rate / 2
+    ahi, bhi = scipy.signal.butter(
+        2, (
+            heartbeat_highpass_freq / nyquist_freq,
+            heartbeat_lowpass_freq / nyquist_freq),
+        btype='bandpass')
+
+    # Bandpass neural data into ECG band
+    # Becomes an array at this point
+    ekg_signal = scipy.signal.filtfilt(ahi, bhi, neural_data_df, axis=0)
+
+    # Restore DataFrame metadata
+    ekg_signal = pandas.DataFrame(
+        ekg_signal, columns=neural_data_df.columns, index=neural_data_df.index)
+
+    # Find heartbeats, indexed into ekg_signal
+    #
+    # SHAPE OF EKG
+    # Use the first channel (LR), which is biggest
+    # The peak is always positive on LR and LV, and negative on RV
+    # LV and RV are nearly opposites, so LR is about double
+    # The central peak is maybe 5 ms wide and the whole thing is maybe 25 ms
+    #
+    # HEIGHT and PROMINENCE
+    # The lowest SNR recording is Cat_229 on 2025-05-15, esp recording 1
+    # On this recording, the heights are 40-50 uV and prominences 50-60
+    # Prominences are larger because of the dip around the peak
+    # Breathing artefacts can get up to 25
+    # There is a kind of bimodality in the raw EKG signal with a dip around 27
+    # A threshold of 35 seems appropriate, we probably would prefer to lose
+    # a few heartbeats than to pick up too much noise
+    #
+    # INTER-BEAT INTERVAL ("DISTANCE")
+    # The inter-beat-interval is 3000-7500 samples (187-469 ms)
+    # Enforce a minimum of 1000 samples
+    #
+    # WIDTH
+    # The main peak is about 5 ms wide (80 samples), so set wlen to 150
+    # The 'width' criterion is actually a half-width if rel_height is 0.5
+    # For some reason there's another, narrower mode in widths, around half-width 35
+    # So use a wide range of (10, 100) on width
+    ekg_threshold = 35e-6  # V
+    peak_times, peak_props = scipy.signal.find_peaks(
+        ekg_signal.loc[:, 'LR'],
+        height=ekg_threshold,
+        distance=1000,
+        prominence=ekg_threshold,
+        wlen=150,
+        width=(10, 150),
+        rel_height=0.5,
+    )
+
+    # DataFrame
+    heartbeats = pandas.DataFrame.from_dict(peak_props)
+    heartbeats['sample'] = peak_times
+
+    # Exclude too close to edge
+    slice_halfwidth = 400
+    heartbeats = heartbeats[
+        (heartbeats['sample'] >= slice_halfwidth) &
+        (heartbeats['sample'] < len(ekg_signal) - slice_halfwidth)
+    ].reset_index(drop=True)
+    heartbeats.index.name = 'beat'
+
+    # Right now this fails on ToyCar1 2025-7-7 rec 8
+    # Bring this check back after we drop that session
+    # ~ # Error check
+    # ~ if len(heartbeats) < 10:
+    # ~ 1/0
+
+    # Extract (n_trials, n_timepoints, 3)
+    sliced_l = []
+    for peak in heartbeats['sample']:
+        # Slice
+        sliced = ekg_signal.iloc[
+        peak - slice_halfwidth:peak + slice_halfwidth
+        ]
+        sliced.index = pandas.Index(
+            np.arange(-slice_halfwidth, slice_halfwidth, dtype=int),
+            name='timepoint')
+
+        # Store
+        sliced_l.append(sliced)
+
+    # Concat
+    sliced_beats_df = pandas.concat(sliced_l, keys=heartbeats.index)
+
+    # Mean waveform over beats within recording
+    mean_beat = sliced_beats_df.groupby('timepoint').mean()
+
+    # Store
+    heartbeats_l.append(heartbeats)
+    heartbeats_waveform_l.append(mean_beat)
+
+    ## Run PSD on each column
+    Pxx_l = []
+    for col in neural_data_df.values.T:
+        # Data is in V
+        # Result is in V**2/Hz (if scale_by_freq == True, which is default)
+        # Check: converting to uV yields a PSD that is 1e12 greater
+        Pxx, freqs = paclab.misc.psd(col, NFFT=16384, Fs=sampling_rate)
+        Pxx_l.append(Pxx)
+
+    # DataFrame
+    Pxx_df = pandas.DataFrame(
+        np.transpose(Pxx_l),
+        columns=neural_data_df.columns, index=freqs)
+    Pxx_df.index.name = 'freq'
+    Pxx_df.columns.name = 'channel'
+
+    # Store
+    Pxx_df_l.append(Pxx_df)
+
+    ## Identify and categorize clicks
+    # Use the least cut as the threshold
+    threshold_V = 10 ** amplitude_cuts.min()
+
+    # Identify clicks
+    identified_clicks = ABR2025.signal_processing.identify_click_times(
+        speaker_signal_V,
+        threshold_V=threshold_V,
+        sampling_rate=sampling_rate,
+        slice_start_sample=abr_start_sample,
+        slice_stop_sample=abr_stop_sample,
+    )
+
+    # Pull out the highpassed signal because we need it later
+    speaker_signal_hp = identified_clicks['highpassed']
+
+    # Categorize them
+    click_params = ABR2025.signal_processing.categorize_clicks(
+        identified_clicks['peak_time_samples'],
+        speaker_signal_hp,
+        amplitude_cuts,
+        amplitude_labels,
+    )
+
+    ## Extract each trigger from the audio signal
+    triggered_ad = ABR2025.signal_processing.slice_audio_on_clicks(
+        speaker_signal_hp, click_params)
+
+    ## Extract neural data locked to onsets
+    # ABR band params
+    nyquist_freq = sampling_rate / 2
+    ahi, bhi = scipy.signal.butter(
+        2, (
+            abr_highpass_freq / nyquist_freq,
+            abr_lowpass_freq / nyquist_freq),
+        btype='bandpass')
+
+    # Bandpass neural data into ABR band
+    # Becomes an array at this point
+    neural_data_hp = scipy.signal.filtfilt(ahi, bhi, neural_data_df, axis=0)
+
+    # Extract highpassed neural data around triggers
+    # Shape is (n_triggers, n_timepoints, n_channels)
+    triggered_neural = np.array([
+        neural_data_hp[trigger + abr_start_sample:trigger + abr_stop_sample]
+        for trigger in click_params['t_samples']])
+
+    # Remove channel as a level
+    triggered_neural = triggered_neural.reshape(
+        [triggered_neural.shape[0], -1])
+
+    # DataFrame
+    triggered_neural = pandas.DataFrame(triggered_neural)
+    triggered_neural.index = pandas.MultiIndex.from_frame(
+        click_params[['label', 'polarity', 't_samples']])
+    triggered_neural = triggered_neural.reorder_levels(
+        ['label', 'polarity', 't_samples']).sort_index()
+
+    # The columns are interdigitated samples and channels
+    # The channels are ordered in the same way as neural_data_df.columns
+    triggered_neural.columns = pandas.MultiIndex.from_product([
+        pandas.Index(range(abr_start_sample, abr_stop_sample), name='timepoint'),
+        neural_data_df.columns,
+    ])
+
+    # Stack channel
+    triggered_neural = triggered_neural.stack('channel', future_stack=True)
+
+    ## Store
+    click_params_l.append(click_params)
+    triggered_ad_l.append(triggered_ad)
+    triggered_neural_l.append(triggered_neural)
+    keys_l.append((date, mouse, recording))
+
+## Concat
+big_triggered_ad = pandas.concat(
+    triggered_ad_l,
+    keys=keys_l, names=['date', 'mouse', 'recording'])
+big_triggered_neural = pandas.concat(
+    triggered_neural_l,
+    keys=keys_l, names=['date', 'mouse', 'recording'])
+big_click_params = pandas.concat(
+    click_params_l,
+    keys=keys_l, names=['date', 'mouse', 'recording']
+).set_index('t_samples', append=True).droplevel(None).sort_index()
+big_Pxx = pandas.concat(
+    Pxx_df_l,
+    keys=keys_l, names=['date', 'mouse', 'recording'])
+big_heartbeat_info = pandas.concat(
+    heartbeats_l,
+    keys=keys_l, names=['date', 'mouse', 'recording'])
+big_heartbeat_waveform = pandas.concat(
+    heartbeats_waveform_l,
+    keys=keys_l, names=['date', 'mouse', 'recording'])
+
+## Store
+big_triggered_ad.to_pickle(
+    os.path.join(output_directory, 'big_triggered_ad'))
+big_triggered_neural.to_pickle(
+    os.path.join(output_directory, 'big_triggered_neural'))
+big_click_params.to_pickle(
+    os.path.join(output_directory, 'big_click_params'))
+big_Pxx.to_pickle(
+    os.path.join(output_directory, 'big_Pxx'))
+big_heartbeat_info.to_pickle(
+    os.path.join(output_directory, 'big_heartbeat_info'))
+big_heartbeat_waveform.to_pickle(
+    os.path.join(output_directory, 'big_heartbeat_waveform'))
+
+# Store as hd5 to avoid pandas pickle compatibility issues
+big_triggered_neural.to_hdf(os.path.join(output_directory,'data.hd5'),
+    key="big_triggered_neural")
+big_triggered_ad.to_hdf(os.path.join(output_directory,'data.hd5'),
+    key="big_triggered_ad")
+big_click_params.to_hdf(os.path.join(output_directory,'data.hd5'),
+    key="big_click_params")
+experiment_metadata.to_hdf(os.path.join(output_directory,'data.hd5'),
+    key="experiment_metadata")
+mouse_metadata.to_hdf(os.path.join(output_directory,'data.hd5'),
+    key="mouse_metadata")
+recording_metadata.to_hdf(os.path.join(output_directory,'data.hd5'),
+    key="recording_metadata")
