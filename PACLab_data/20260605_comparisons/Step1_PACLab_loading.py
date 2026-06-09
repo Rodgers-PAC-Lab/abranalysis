@@ -256,7 +256,7 @@ if not os.path.exists('figures'):
 ## Start loading recording data
 
 ## Params
-abr_start_sample = 0
+abr_start_sample = -40
 abr_stop_sample = 160
 abr_highpass_freq = 300
 abr_lowpass_freq = 3000
