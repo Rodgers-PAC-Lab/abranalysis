@@ -568,15 +568,28 @@ big_heartbeat_waveform.to_pickle(
     os.path.join(output_directory, 'big_heartbeat_waveform'))
 
 # Store as hd5 to avoid pandas pickle compatibility issues
-big_triggered_neural.to_hdf(os.path.join(output_directory,'data.hd5'),
+big_triggered_neural.to_hdf(os.path.join(output_directory,'big_data.hd5'),
     key="big_triggered_neural")
-big_triggered_ad.to_hdf(os.path.join(output_directory,'data.hd5'),
+big_triggered_ad.to_hdf(os.path.join(output_directory,'big_data.hd5'),
     key="big_triggered_ad")
-big_click_params.to_hdf(os.path.join(output_directory,'data.hd5'),
+big_click_params.to_hdf(os.path.join(output_directory,'big_data.hd5'),
     key="big_click_params")
-experiment_metadata.to_hdf(os.path.join(output_directory,'data.hd5'),
+experiment_metadata.to_hdf(os.path.join(output_directory,'metadata.hd5'),
     key="experiment_metadata")
-mouse_metadata.to_hdf(os.path.join(output_directory,'data.hd5'),
+mouse_metadata.to_hdf(os.path.join(output_directory,'metadata.hd5'),
     key="mouse_metadata")
-recording_metadata.to_hdf(os.path.join(output_directory,'data.hd5'),
+recording_metadata.to_hdf(os.path.join(output_directory,'metadata.hd5'),
+    key="recording_metadata")
+
+# Store as hd5 to avoid pandas pickle compatibility issues
+big_triggered_neural.to_hdf('data.hd5', key="big_triggered_neural")
+big_triggered_ad.to_hdf('data.hd5',
+    key="big_triggered_ad")
+big_click_params.to_hdf('data.hd5',
+    key="big_click_params")
+experiment_metadata.to_hdf('data.hd5',
+    key="experiment_metadata")
+mouse_metadata.to_hdf('data.hd5',
+    key="mouse_metadata")
+recording_metadata.to_hdf('data.hd5',
     key="recording_metadata")

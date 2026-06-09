@@ -41,25 +41,19 @@ abs_max_sigma = 3
 stdev_sigma = 3
 
 ## Load metadata
-# mouse_metadata = pandas.read_csv(
-#     os.path.join(raw_data_directory, 'metadata', 'mouse_metadata.csv'))
-# experiment_metadata = pandas.read_csv(
-#     os.path.join(raw_data_directory, 'metadata', 'experiment_metadata.csv'))
-# recording_metadata = pandas.read_csv(
-#     os.path.join(raw_data_directory, 'metadata', 'recording_metadata.csv'))
 mouse_metadata = pandas.read_hdf(
-    os.path.join(output_directory,'data.hd5'),key="mouse_metadata")
+    os.path.join(output_directory,'metadata.hd5'),key="mouse_metadata")
 experiment_metadata = pandas.read_hdf(
-    os.path.join(output_directory,'data.hd5'),key="experiment_metadata")
+    os.path.join(output_directory,'metadata.hd5'),key="experiment_metadata")
 recording_metadata = pandas.read_hdf(
-    os.path.join(output_directory,'data.hd5'),key="recording_metadata")
+    os.path.join(output_directory,'metadata.hd5'),key="recording_metadata")
 
 ## Load previous results
 # Load results of Step1_PACLab_loading
 big_triggered_neural = pandas.read_hdf(
-    os.path.join(output_directory,'data.hd5'),key='big_triggered_neural')
+    os.path.join(output_directory,'big_data.hd5'),key='big_triggered_neural')
 big_click_params = pandas.read_hdf(
-    os.path.join(output_directory,'data.hd5'),key='big_click_params')
+    os.path.join(output_directory,'big_data.hd5'),key='big_click_params')
 
 # Loudest dB
 loudest_db = big_triggered_neural.index.get_level_values('label').max()
@@ -187,8 +181,7 @@ n_mice = len(recording_duration.groupby('mouse').sum())
 quantiles = recording_duration.quantile((0, .25, .5, .75, 1))
 
 # Get range of surgical experiment dates
-surgery_df = experiment_metadata.join(
-    mouse_metadata.set_index('mouse')['HL_date'], on='mouse')
+surgery_df = experiment_metadata.copy()
 surgery_dates = (surgery_df['date'] - surgery_df['HL_date']).dropna().sort_values()
 surgery_dates = surgery_dates.value_counts().sort_index()
 
@@ -203,3 +196,15 @@ with open(stats_filename, 'w') as fi:
 # Echo
 with open(stats_filename) as fi:
     print(''.join(fi.readlines()))
+
+## Store
+big_abrs.to_hdf(os.path.join(output_directory,'abr_avgs.hd5'), key='big_abrs')
+averaged_abrs_by_date.to_hdf(os.path.join(output_directory,'abr_avgs.hd5'),
+    key='averaged_abrs_by_date')
+averaged_abrs_by_date.to_pickle(os.path.join(output_directory, 'averaged_abrs_by_date'))
+averaged_abrs_by_mouse.to_hdf(os.path.join(output_directory,'abr_avgs.hd5'),
+    key='averaged_abrs_by_mouse')
+averaged_abrs_by_mouse.to_pickle(os.path.join(output_directory, 'averaged_abrs_by_mouse'))
+trial_counts.to_hdf(os.path.join(output_directory,'abr_avgs.hd5'),
+    key='trial_counts')
+trial_counts.to_pickle(os.path.join(output_directory, 'trial_counts'))
