@@ -544,20 +544,17 @@ def calculate_and_plot_wave_exact(df, freq, db,
         peak_finding_model=default_peak_finding_model(filepath=CNN_filepath),
         return_peaks=True, time_scale=10):
     # atten = st.session_state.get('atten', False)
-
+    df = df.reset_index()
     db_column = 'Level(dB)' # if not atten else 'PostAtten(dB)'
     khz = df[(df['Freq(Hz)'] == freq) & (df[db_column] == db)]
 
     if not khz.empty:
-        index = khz.index.values[
-            -1]  # in .arfs, sometimes multiple recordings if one is repeated, often the last one is the best
-
         # Drop the frequency column if it's at the end
         if df.columns[-1]=='Freq(Hz)':
             df = df.drop('Freq(Hz)', axis=1)
 
         # orig_y = df.loc[index, '0':].dropna()
-        orig_y = df.loc[index, 0:].dropna()
+        orig_y = df.loc[:, 0:].dropna().mean()
         orig_y = pandas.to_numeric(orig_y, errors='coerce').dropna()
         orig_x = np.linspace(0, time_scale, len(orig_y))
 
