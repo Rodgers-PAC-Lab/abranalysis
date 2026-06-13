@@ -46,10 +46,10 @@ metadata_directory = paths['metadata_directory']
 
 # The mouse and experiment metadata should be int hr output folder
 
-mouse_metadata = pandas.read_csv(os.path.join(metadata_directory, 'mouse_metadata_full.csv'))
+mouse_metadata = pandas.read_csv(os.path.join(metadata_directory, 'mouse_metadata.csv'))
 
 # The experiments in the dataset
-experiment_metadata = pandas.read_csv(os.path.join(metadata_directory, 'experiment_metadata_full.csv'))
+experiment_metadata = pandas.read_csv(os.path.join(metadata_directory, 'experiment_metadata.csv'))
 
 # When exporting to CSV first, datetime-like columns are str
 # Turn the dates into actual datetime dates
@@ -57,6 +57,9 @@ experiment_metadata['date'] = experiment_metadata['date'].apply(
     lambda x: datetime.datetime.strptime(x, '%Y-%m-%d').date())
 mouse_metadata['DOB'] = mouse_metadata['DOB'].apply(
     lambda x: datetime.datetime.strptime(x, '%Y-%m-%d').date())
+
+if 'HL_date' not in mouse_metadata.columns:
+    mouse_metadata['HL_date'] = ''
 
 # Coerce: special case this one because it can be null
 mouse_metadata['HL_date'] = mouse_metadata['HL_date'].apply(

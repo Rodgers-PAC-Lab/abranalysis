@@ -1,0 +1,19 @@
+figures/STATS__N_OVERALL
+n = 19 mice; 191 recordings; 38 experiments
+duration quantiles:
+0.00     37.051687
+0.25    341.412875
+0.50    483.362188
+0.75    501.211688
+1.00    640.394125
+dtype: float64
+surgery date range:
+-7 days    1
+-6 days    3
+-3 days    2
+-1 days    4
+0 days     2
+3 days     6
+5 days     2
+6 days     4
+Name: count, dtype: int64
