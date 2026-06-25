@@ -21,6 +21,11 @@ import tqdm
 from utils.models import CNN
 from utils.calculate_PACLAB import interpolate_and_smooth, peak_finding, default_peak_finding_model, calculate_and_plot_wave_exact
 
+def pad_with_nan(arr, length):
+    padded = np.full(length, np.nan)
+    padded[:len(arr)] = arr
+    return padded
+
 ## Plotting defaults
 my.plot.manuscript_defaults()
 my.plot.font_embed()
@@ -69,106 +74,109 @@ pre_HL = abra_df.xs(False,level='after_HL')
 pre_HL = pre_HL.droplevel('HL_type',axis='index')
 pre_HL = pre_HL.groupby(['mouse','channel','speaker_side', 'Level(dB)', 'Freq(Hz)']).mean()
 
-PLOT_FLIPPED_WAVEFORMS = True
+PLOT_WAVEFORMS = False
+PLOT_FLIPPED_WAVEFORMS = False
+PLOT_STACKED_VERTEX_EAR = True
 
-for mouse in pre_HL.index.get_level_values('mouse').unique():
-    f, axa = plt.subplots(3, 2, sharex=True, sharey=True,
-        figsize=(10, 8))
-    f.subplots_adjust(left=0.08, bottom=0.1, top=0.9, wspace=0.02, hspace=0.17)
-    if mouse=='March17th':
-        mouse_df = pre_HL.loc[mouse]
-    else:
-        mouse_df = -pre_HL.loc[mouse]
-    gobj = mouse_df.groupby(['channel','speaker_side'])
-    i_ax = 0
-    for (channel ,speaker_side),subdf in gobj:
-        # Pick plot ax
-        ax = axa.flatten()[i_ax]
-        # Make the colorbar
-        aut_colorbar = my.plot.generate_colorbar(
-            len(subdf.index), mapname='inferno', start=0, stop=0.85)
+if PLOT_WAVEFORMS:
+    for mouse in pre_HL.index.get_level_values('mouse').unique():
+        f, axa = plt.subplots(3, 2, sharex=True, sharey=True,
+            figsize=(10, 8))
+        f.subplots_adjust(left=0.08, bottom=0.1, top=0.9, wspace=0.02, hspace=0.17)
+        if mouse=='March17th':
+            mouse_df = pre_HL.loc[mouse]
+        else:
+            mouse_df = -pre_HL.loc[mouse]
+        gobj = mouse_df.groupby(['channel','speaker_side'])
+        i_ax = 0
+        for (channel ,speaker_side),subdf in gobj:
+            # Pick plot ax
+            ax = axa.flatten()[i_ax]
+            # Make the colorbar
+            aut_colorbar = my.plot.generate_colorbar(
+                len(subdf.index), mapname='inferno', start=0, stop=0.85)
 
-        color_df = pandas.DataFrame(aut_colorbar,
-            index=subdf.index.sort_values(ascending=True))
+            color_df = pandas.DataFrame(aut_colorbar,
+                index=subdf.index.sort_values(ascending=True))
 
-        # Iterate over sound levels
-        sound_levels = subdf.index.get_level_values('Level(dB)').unique()
-        sound_levels = sound_levels.sort_values(ascending=False)
+            # Iterate over sound levels
+            sound_levels = subdf.index.get_level_values('Level(dB)').unique()
+            sound_levels = sound_levels.sort_values(ascending=False)
 
-        # all_xcoord_l = []
-        # all_ycoord_l = []
-        peak_stats_l = []
-        keys_l = []
-        for i_db in sound_levels:
-            # Get peaks and troughs for sound level
-            topl = subdf.reset_index()
-            topl = topl.loc[topl['Level(dB)']==i_db]
-            topl = topl.set_index(subdf.index.names)
-            orig_x, orig_y, highest_peaks, relevant_troughs = calculate_and_plot_wave_exact(-topl, 1000, i_db)
+            # all_xcoord_l = []
+            # all_ycoord_l = []
+            peak_stats_l = []
+            keys_l = []
+            for i_db in sound_levels:
+                # Get peaks and troughs for sound level
+                topl = subdf.reset_index()
+                topl = topl.loc[topl['Level(dB)']==i_db]
+                topl = topl.set_index(subdf.index.names)
+                orig_x, orig_y, highest_peaks, relevant_troughs = calculate_and_plot_wave_exact(-topl, 1000, i_db)
 
-            # Plot ABR for each sound level
-            # We'll plot peaks later so they don't get buried under subsequent waveform lines
-            ax.plot(orig_x, -topl.loc[:, 0:].mean(),
-                color=color_df.xs(i_db, level='Level(dB)').values, lw=.75, label=i_db)
+                # Plot ABR for each sound level
+                # We'll plot peaks later so they don't get buried under subsequent waveform lines
+                ax.plot(orig_x, -topl.loc[:, 0:].mean(),
+                    color=color_df.xs(i_db, level='Level(dB)').values, lw=.75, label=i_db)
 
-            d = {
-                'mouse' : mouse,
-                'channel' : channel,
-                'speaker_side' : speaker_side,
-                'Level(dB)' : i_db,
-                'pks_x' : orig_x[highest_peaks],
-                'pks_y': orig_y[highest_peaks],
-                'troughs_x' : orig_x[relevant_troughs],
-                'troughs_y': orig_y[relevant_troughs]
-            }
+                d = {
+                    'mouse' : mouse,
+                    'channel' : channel,
+                    'speaker_side' : speaker_side,
+                    'Level(dB)' : i_db,
+                    'pks_x' : orig_x[highest_peaks],
+                    'pks_y': orig_y[highest_peaks],
+                    'troughs_x' : orig_x[relevant_troughs],
+                    'troughs_y': orig_y[relevant_troughs]
+                }
 
-            # Append results to list
-            # peak_stats_l.append([orig_x, orig_y, highest_peaks, relevant_troughs])
-            # keys_l.append([mouse, channel, speaker_side, i_db])
-            peak_stats_l.append(d)
+                # Append results to list
+                # peak_stats_l.append([orig_x, orig_y, highest_peaks, relevant_troughs])
+                # keys_l.append([mouse, channel, speaker_side, i_db])
+                peak_stats_l.append(d)
 
-        config_df = pandas.DataFrame(peak_stats_l).set_index(['mouse','channel','speaker_side', 'Level(dB)'])
+            config_df = pandas.DataFrame(peak_stats_l).set_index(['mouse','channel','speaker_side', 'Level(dB)'])
 
-        colors_l = ['red', 'darkred', 'blue', 'darkblue', 'green', 'limegreen',
-        'gold', 'darkgoldenrod', 'hotpink', 'darkmagenta']
+            colors_l = ['red', 'darkred', 'blue', 'darkblue', 'green', 'limegreen',
+            'gold', 'darkgoldenrod', 'hotpink', 'darkmagenta']
 
-        pk_colors_l = ['red', 'blue', 'limegreen', 'gold', 'hotpink']
-        trough_colors_l = ['darkred', 'darkblue', 'green', 'darkgoldenrod', 'darkmagenta']
+            pk_colors_l = ['red', 'blue', 'limegreen', 'gold', 'hotpink']
+            trough_colors_l = ['darkred', 'darkblue', 'green', 'darkgoldenrod', 'darkmagenta']
 
-        pk_coords_l = []
-        tr_coords_l = []
-        for i_db in sound_levels:
             pk_coords_l = []
             tr_coords_l = []
-            topl = config_df.xs(i_db,level='Level(dB)')
-            for pk_x, pk_y in zip(topl['pks_x'].values[0], topl['pks_y'].values[0]):
-                pk_coords_l.append([pk_x, pk_y])
-            for tr_x, tr_y in zip(topl['troughs_x'].values[0], topl['troughs_y'].values[0]):
-                tr_coords_l.append([tr_x, tr_y])
-            for i, pk in enumerate(pk_coords_l):
-                ax.plot(pk[0],pk[1], '.', color=pk_colors_l[i])
-            for i, tr in enumerate(tr_coords_l):
-                ax.plot(tr[0],tr[1], '.', color=trough_colors_l[i])
-        ax.set_title(channel + ' ' + speaker_side)
-        my.plot.despine(ax)
-        i_ax = i_ax + 1
+            for i_db in sound_levels:
+                pk_coords_l = []
+                tr_coords_l = []
+                topl = config_df.xs(i_db,level='Level(dB)')
+                for pk_x, pk_y in zip(topl['pks_x'].values[0], topl['pks_y'].values[0]):
+                    pk_coords_l.append([pk_x, pk_y])
+                for tr_x, tr_y in zip(topl['troughs_x'].values[0], topl['troughs_y'].values[0]):
+                    tr_coords_l.append([tr_x, tr_y])
+                for i, pk in enumerate(pk_coords_l):
+                    ax.plot(pk[0],pk[1], '.', color=pk_colors_l[i])
+                for i, tr in enumerate(tr_coords_l):
+                    ax.plot(tr[0],tr[1], '.', color=trough_colors_l[i])
+            ax.set_title(channel + ' ' + speaker_side)
+            my.plot.despine(ax)
+            i_ax = i_ax + 1
 
-    # Set axis labels
-    for ax in axa[-1]:
-        ax.set_xlabel('time (ms)')
-    for ax in axa[:, 0]:
-        ax.set_ylabel('ABR (uV)')
+        # Set axis labels
+        for ax in axa[-1]:
+            ax.set_xlabel('time (ms)')
+        for ax in axa[:, 0]:
+            ax.set_ylabel('ABR (uV)')
 
-    # Make legend
-    axa[1, 1].legend(loc='upper right', bbox_to_anchor=(1.25, 1), frameon=False)
-    # Save
-    savename = 'ABRA_pks_' + mouse
+        # Make legend
+        axa[1, 1].legend(loc='upper right', bbox_to_anchor=(1.25, 1), frameon=False)
+        # Save
+        savename = 'ABRA_pks_' + mouse
 
-    f.suptitle(mouse)
+        f.suptitle(mouse)
 
-    f.savefig(os.path.join(
-        output_directory, 'figures', savename+'.png'), dpi=300)
-    plt.close(f)
+        f.savefig(os.path.join(
+            output_directory, 'figures', savename+'.png'), dpi=300)
+        plt.close(f)
 
 if PLOT_FLIPPED_WAVEFORMS:
     for mouse in pre_HL.index.get_level_values('mouse').unique():
@@ -182,7 +190,6 @@ if PLOT_FLIPPED_WAVEFORMS:
         gobj = mouse_df.groupby(['channel','speaker_side'])
         i_ax = 0
         for (channel ,speaker_side),subdf in gobj:
-            # print('(hacker voice) Im in')
             # Pick plot ax
             ax = axa.flatten()[i_ax]
             # Make the colorbar
@@ -197,7 +204,7 @@ if PLOT_FLIPPED_WAVEFORMS:
             sound_levels = sound_levels.sort_values(ascending=False)
 
             peak_stats_l = []
-               for i_db in sound_levels:
+            for i_db in sound_levels:
                 # Get peaks and troughs for sound level
                 topl = subdf.reset_index()
                 topl = topl.loc[topl['Level(dB)']==i_db]
@@ -266,3 +273,83 @@ if PLOT_FLIPPED_WAVEFORMS:
         f.savefig(os.path.join(
             output_directory, 'figures', savename+'.png'), dpi=300)
         plt.close(f)
+
+if PLOT_STACKED_VERTEX_EAR:
+    pk_colors_l = ['red', 'blue', 'limegreen', 'gold', 'hotpink']
+    trough_colors_l = ['darkred', 'darkblue', 'green', 'darkgoldenrod', 'darkmagenta']
+
+    for mouse in pre_HL.index.get_level_values('mouse').unique()[0:3]:
+
+
+        sound_levels = pre_HL.index.get_level_values('Level(dB)').unique()
+        sound_levels = sound_levels.sort_values(ascending=False)
+        f, axa = plt.subplots(len(sound_levels),2, sharex=True, sharey=True,
+            figsize=(10, 8))
+        f.subplots_adjust(left=0.08, bottom=0.1, top=0.9, wspace=0.02, hspace=0.17)
+        if mouse=='March17th':
+            mouse_df = -pre_HL.loc[mouse, 'RV',:]
+        else:
+            mouse_df = pre_HL.loc[mouse, 'RV', :]
+
+        # Plot each sound level for left speaker side
+        for ax,i_db in zip(axa[:,0],sound_levels):
+        # for i_db in sound_levels:
+            topl = mouse_df.loc['L'].reset_index()
+            topl = topl.loc[topl['Level(dB)']==i_db]
+            topl = topl.set_index(['Level(dB)', 'Freq(Hz)'])
+
+            # Get peaks and troughs for sound level
+            orig_x, orig_y, highest_peaks, relevant_troughs = calculate_and_plot_wave_exact(-topl, 1000, i_db)
+
+            pks_df = pandas.DataFrame({
+                'pks_x' : pad_with_nan(orig_x[highest_peaks], 5),
+                'pks_y': pad_with_nan(orig_y[highest_peaks], 5),
+                'troughs_x' : pad_with_nan(orig_x[relevant_troughs], 5),
+                'troughs_y': pad_with_nan(orig_y[relevant_troughs], 5),
+                'pk_colors': ['red', 'blue', 'limegreen', 'gold', 'hotpink'],
+                'trough_colors' : ['darkred', 'darkblue', 'green', 'darkgoldenrod', 'darkmagenta']
+            },)
+
+            ax.set_title('L ' + str(i_db))
+            ax.plot(orig_x, -topl.loc[i_db].T, color='k', lw=0.8)
+            for wave_n in np.arange(0,5):
+                coords = pks_df.loc[wave_n]
+                ax.plot(coords['pks_x'], coords['pks_y'], '.', color=coords['pk_colors'])
+                ax.plot(coords['troughs_x'], coords['troughs_y'], '.', color=coords['trough_colors'])
+
+            # Despine
+            my.plot.despine(ax,which=('top','bottom','left','right'))
+
+        # Plot each sound level for right speaker side
+        for ax,i_db in zip(axa[:,1],sound_levels):
+        # for i_db in sound_levels:
+            topl = mouse_df.loc['R'].reset_index()
+            topl = topl.loc[topl['Level(dB)']==i_db]
+            topl = topl.set_index(['Level(dB)', 'Freq(Hz)'])
+
+            # Get peaks and troughs for sound level
+            orig_x, orig_y, highest_peaks, relevant_troughs = calculate_and_plot_wave_exact(-topl, 1000, i_db)
+
+            pks_df = pandas.DataFrame({
+                'pks_x' : pad_with_nan(orig_x[highest_peaks], 5),
+                'pks_y': pad_with_nan(orig_y[highest_peaks], 5),
+                'troughs_x' : pad_with_nan(orig_x[relevant_troughs], 5),
+                'troughs_y': pad_with_nan(orig_y[relevant_troughs], 5),
+                'pk_colors': ['red', 'blue', 'limegreen', 'gold', 'hotpink'],
+                'trough_colors' : ['darkred', 'darkblue', 'green', 'darkgoldenrod', 'darkmagenta']
+            },)
+
+            ax.set_title('R ' + str(i_db))
+            ax.plot(orig_x, -topl.loc[i_db].T, color='k', lw=0.8)
+            for wave_n in np.arange(0,5):
+                coords = pks_df.loc[wave_n]
+                ax.plot(coords['pks_x'], coords['pks_y'], '.', color=coords['pk_colors'])
+                ax.plot(coords['troughs_x'], coords['troughs_y'], '.', color=coords['trough_colors'])
+
+            # Despine
+            my.plot.despine(ax,which=('top','bottom','left','right'))
+
+        # Remove axis decorations
+        for ax in axa.flatten():
+            ax.set_title('')
+            ax.set_yticks([])
