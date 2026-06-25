@@ -274,27 +274,111 @@ if PLOT_FLIPPED_WAVEFORMS:
             output_directory, 'figures', savename+'.png'), dpi=300)
         plt.close(f)
 
+# if PLOT_STACKED_VERTEX_EAR:
+#     pk_colors_l = ['red', 'blue', 'limegreen', 'gold', 'hotpink']
+#     trough_colors_l = ['darkred', 'darkblue', 'green', 'darkgoldenrod', 'darkmagenta']
+#
+#     for mouse in pre_HL.index.get_level_values('mouse').unique()[0:3]:
+#
+#
+#         sound_levels = pre_HL.index.get_level_values('Level(dB)').unique()
+#         sound_levels = sound_levels.sort_values(ascending=False)
+#         f, axa = plt.subplots(len(sound_levels),1, sharex=True, sharey=True,
+#             figsize=(6, 10))
+#         f.subplots_adjust(left=0.08, bottom=0.1, top=0.9, wspace=0.02, hspace=0.17)
+#         if mouse=='March17th':
+#             mouse_df = -pre_HL.loc[mouse, ['LV','RV'],:].groupby('Level(dB)').mean()
+#         else:
+#             mouse_df = pre_HL.loc[mouse, ['LV','RV'], :].groupby(['Level(dB)','Freq(Hz)']).mean()
+#
+#         # Plot each sound level for left speaker side
+#         for ax,i_db in zip(axa,sound_levels):
+#         # for i_db in sound_levels:
+#             topl = mouse_df.reset_index()
+#             topl = topl.loc[topl['Level(dB)']==i_db]
+#             topl = topl.set_index(['Level(dB)', 'Freq(Hz)'])
+#
+#             # Get peaks and troughs for sound level
+#             orig_x, orig_y, highest_peaks, relevant_troughs = calculate_and_plot_wave_exact(-topl, 1000, i_db)
+#
+#             pks_df = pandas.DataFrame({
+#                 'pks_x' : pad_with_nan(orig_x[highest_peaks], 5),
+#                 'pks_y': pad_with_nan(orig_y[highest_peaks], 5),
+#                 'troughs_x' : pad_with_nan(orig_x[relevant_troughs], 5),
+#                 'troughs_y': pad_with_nan(orig_y[relevant_troughs], 5),
+#                 'pk_colors': ['red', 'blue', 'limegreen', 'gold', 'hotpink'],
+#                 'trough_colors' : ['darkred', 'darkblue', 'green', 'darkgoldenrod', 'darkmagenta']
+#             },)
+#
+#             ax.set_title(str(i_db))
+#             ax.plot(orig_x, -topl.loc[i_db].T, color='k', lw=0.8)
+#             for wave_n in np.arange(0,5):
+#                 coords = pks_df.loc[wave_n]
+#                 ax.plot(coords['pks_x'], coords['pks_y'], '.', color=coords['pk_colors'])
+#                 ax.plot(coords['troughs_x'], coords['troughs_y'], '.', color=coords['trough_colors'])
+#
+#             # Despine
+#             my.plot.despine(ax,which=('top','bottom','left','right'))
+#         #
+#         # # Plot each sound level for right speaker side
+#         # for ax,i_db in zip(axa[:,1],sound_levels):
+#         # # for i_db in sound_levels:
+#         #     topl = mouse_df.loc['R'].reset_index()
+#         #     topl = topl.loc[topl['Level(dB)']==i_db]
+#         #     topl = topl.set_index(['Level(dB)', 'Freq(Hz)'])
+#         #
+#         #     # Get peaks and troughs for sound level
+#         #     orig_x, orig_y, highest_peaks, relevant_troughs = calculate_and_plot_wave_exact(-topl, 1000, i_db)
+#         #
+#         #     pks_df = pandas.DataFrame({
+#         #         'pks_x' : pad_with_nan(orig_x[highest_peaks], 5),
+#         #         'pks_y': pad_with_nan(orig_y[highest_peaks], 5),
+#         #         'troughs_x' : pad_with_nan(orig_x[relevant_troughs], 5),
+#         #         'troughs_y': pad_with_nan(orig_y[relevant_troughs], 5),
+#         #         'pk_colors': ['red', 'blue', 'limegreen', 'gold', 'hotpink'],
+#         #         'trough_colors' : ['darkred', 'darkblue', 'green', 'darkgoldenrod', 'darkmagenta']
+#         #     },)
+#         #
+#         #     ax.set_title('R ' + str(i_db))
+#         #     ax.plot(orig_x, -topl.loc[i_db].T, color='k', lw=0.8)
+#         #     for wave_n in np.arange(0,5):
+#         #         coords = pks_df.loc[wave_n]
+#         #         ax.plot(coords['pks_x'], coords['pks_y'], '.', color=coords['pk_colors'])
+#         #         ax.plot(coords['troughs_x'], coords['troughs_y'], '.', color=coords['trough_colors'])
+#         #
+#         #     # Despine
+#         #     my.plot.despine(ax,which=('top','bottom','left','right'))
+#
+#         # Remove axis decorations
+#         for ax in axa.flatten():
+#             ax.set_title('')
+#             ax.set_yticks([])
+
 if PLOT_STACKED_VERTEX_EAR:
-    pk_colors_l = ['red', 'blue', 'limegreen', 'gold', 'hotpink']
-    trough_colors_l = ['darkred', 'darkblue', 'green', 'darkgoldenrod', 'darkmagenta']
-
-    for mouse in pre_HL.index.get_level_values('mouse').unique()[0:3]:
-
+    for mouse in pre_HL.index.get_level_values('mouse').unique():
 
         sound_levels = pre_HL.index.get_level_values('Level(dB)').unique()
         sound_levels = sound_levels.sort_values(ascending=False)
-        f, axa = plt.subplots(len(sound_levels),2, sharex=True, sharey=True,
-            figsize=(10, 8))
-        f.subplots_adjust(left=0.08, bottom=0.1, top=0.9, wspace=0.02, hspace=0.17)
+        f, axa = plt.subplots(len(sound_levels),1, sharex=True, sharey=True,
+            figsize=(4.5, 8))
+        f.subplots_adjust(left=0.15, right=0.98,
+            bottom=0.1, top=0.9,
+            wspace=0.02, hspace=-0.3)
+        f.supylabel('Sound Level (dB)')
+        f.supxlabel('Time (ms)')
+        f.suptitle(mouse + ' Vertex-Ear average ABR')
         if mouse=='March17th':
-            mouse_df = -pre_HL.loc[mouse, 'RV',:]
+            mouse_df = -pre_HL.loc[mouse, ['LV','RV'],:].groupby(
+                ['Level(dB)', 'Freq(Hz)']).mean()
         else:
-            mouse_df = pre_HL.loc[mouse, 'RV', :]
+            mouse_df = pre_HL.loc[mouse, ['LV','RV'], :].groupby(
+                ['Level(dB)','Freq(Hz)']).mean()
 
         # Plot each sound level for left speaker side
-        for ax,i_db in zip(axa[:,0],sound_levels):
-        # for i_db in sound_levels:
-            topl = mouse_df.loc['L'].reset_index()
+        for ax,i_db in zip(axa,sound_levels):
+            # Label ax with sound level in dB
+            ax.set_ylabel(str(i_db), rotation=0)
+            topl = mouse_df.reset_index()
             topl = topl.loc[topl['Level(dB)']==i_db]
             topl = topl.set_index(['Level(dB)', 'Freq(Hz)'])
 
@@ -310,36 +394,7 @@ if PLOT_STACKED_VERTEX_EAR:
                 'trough_colors' : ['darkred', 'darkblue', 'green', 'darkgoldenrod', 'darkmagenta']
             },)
 
-            ax.set_title('L ' + str(i_db))
-            ax.plot(orig_x, -topl.loc[i_db].T, color='k', lw=0.8)
-            for wave_n in np.arange(0,5):
-                coords = pks_df.loc[wave_n]
-                ax.plot(coords['pks_x'], coords['pks_y'], '.', color=coords['pk_colors'])
-                ax.plot(coords['troughs_x'], coords['troughs_y'], '.', color=coords['trough_colors'])
-
-            # Despine
-            my.plot.despine(ax,which=('top','bottom','left','right'))
-
-        # Plot each sound level for right speaker side
-        for ax,i_db in zip(axa[:,1],sound_levels):
-        # for i_db in sound_levels:
-            topl = mouse_df.loc['R'].reset_index()
-            topl = topl.loc[topl['Level(dB)']==i_db]
-            topl = topl.set_index(['Level(dB)', 'Freq(Hz)'])
-
-            # Get peaks and troughs for sound level
-            orig_x, orig_y, highest_peaks, relevant_troughs = calculate_and_plot_wave_exact(-topl, 1000, i_db)
-
-            pks_df = pandas.DataFrame({
-                'pks_x' : pad_with_nan(orig_x[highest_peaks], 5),
-                'pks_y': pad_with_nan(orig_y[highest_peaks], 5),
-                'troughs_x' : pad_with_nan(orig_x[relevant_troughs], 5),
-                'troughs_y': pad_with_nan(orig_y[relevant_troughs], 5),
-                'pk_colors': ['red', 'blue', 'limegreen', 'gold', 'hotpink'],
-                'trough_colors' : ['darkred', 'darkblue', 'green', 'darkgoldenrod', 'darkmagenta']
-            },)
-
-            ax.set_title('R ' + str(i_db))
+            ax.set_title(str(i_db))
             ax.plot(orig_x, -topl.loc[i_db].T, color='k', lw=0.8)
             for wave_n in np.arange(0,5):
                 coords = pks_df.loc[wave_n]
@@ -353,3 +408,10 @@ if PLOT_STACKED_VERTEX_EAR:
         for ax in axa.flatten():
             ax.set_title('')
             ax.set_yticks([])
+
+            # Set ax background transparent so they can overlap
+            ax.set_facecolor('none')
+        ## Save figure
+        savename = 'STACKED_VERTEX_EAR_' + mouse
+        f.savefig(os.path.join(
+            output_directory, 'figures', savename+'.png'), dpi=300)
