@@ -2,6 +2,9 @@ import torch
 import torch.nn as nn
 from tensorflow.keras.models import load_model
 
+# Use this to make the CNN paths absolute rather than relative
+import os
+_HERE = os.path.dirname(os.path.abspath(__file__))
 
 class CNN(nn.Module):
     def __init__(self, filter1, filter2, dropout1, dropout2, dropout_fc):
@@ -36,12 +39,13 @@ def default_peak_finding_model():
     dropout_fc = 0.1
     # Load the pre-trained model
     peak_finding_model = CNN(filter1, filter2, dropout1, dropout2, dropout_fc)
-    model_loader = torch.load('utils/models/waveI_cnn.pth')
+    model_loader = torch.load(os.path.join(_HERE, 'models', 'waveI_cnn.pth'))
     peak_finding_model.load_state_dict(model_loader)
     peak_finding_model.eval()
     return peak_finding_model
 
 def default_thresholding_model():
-    thresholding_model = load_model('utils/models/abr_thresholding_NEW.keras')
+    thresholding_model = load_model(
+        os.path.join(_HERE, 'models', 'abr_thresholding_NEW.keras'))
     thresholding_model.steps_per_execution = 1
     return thresholding_model
